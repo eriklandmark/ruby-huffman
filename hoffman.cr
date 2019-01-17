@@ -1,17 +1,12 @@
-#require pp'
-require 'stackprof'
+#require 'pp'
 
 time = Time.now
 
 #text = File.read("long_text.txt")
-text = "this is an example of a huffman tree"
+text = "\"this is an example of a huffman tree\""
 
 class Node
-  attr_accessor :left, :right, :symbol, :freq
-  @left = nil
-  @right = nil
-  @symbol = ""
-  @frequency = 0
+  property :left, :right, :symbol, :frequency
 
   def initialize(left, right, symbol, freq)
     @left = left
@@ -21,38 +16,47 @@ class Node
   end
 end
 
-@tree = nil
-@nodes = []
-@path = ""
+class Encoder
+    property :nodes, :path, :tree
+
+    def intialize()
+        @nodes = [] of Array(Node) | Nil
+        @path = ""
+        @tree = nil | Node
+    end
+end
 
 def time_diff_milli(start, finish)
   (finish - start).round(2)
 end
 
+
+
 def get_table(text)
-  chars_map = text.chars.reduce({}) {|acc, char| acc[char] = acc[char].nil? ? 1 : acc[char] + 1; acc}
-  @nodes = chars_map.sort_by{|_,v|v}
-  @tree = Node.new(nil, nil, "", text.length)
-  create_tree(@tree, 1, Math.log2(@nodes.length).ceil)
-  chars_map.keys.reduce({}){|acc, sym| get_path("0", @tree.left, sym); get_path("1", @tree.right, sym); acc[sym] = @path; @path = ""; acc}
+  encoder = Encoder.new
+  chars_map = text.chars.reduce({} of Char => Int32) {|acc, char| acc[char] = acc[char].nil? ? 1 : acc[char] + 1; acc}
+  encoder.nodes = chars_map.to_a.sort_by{|k,v|v}
+  encoder.tree = Node.new(nil, nil, "", text.size)
+  create_tree(encoder, encoder.tree, 1, Math.log2(encoder.nodes.size).ceil)
+  chars_map.keys.reduce({} of String => String){|acc, sym| get_path("0", encoder.tree.left, sym); get_path("1", encoder.tree.right, sym); acc[sym] = encoder.path; encoder.path = ""; acc}
 end
 
-def create_tree(node, layer, max_layer)
+def create_tree(encoder, node, layer, max_layer)
   if layer >= max_layer
-    n = @nodes.delete_at(0)
+    n = encoder.nodes.delete_at(0)
     unless n.nil?
       node.left = Node.new(nil, nil , n[0], n[1])
     end
-    n = @nodes.delete_at(0)
+    n = encoder.nodes.delete_at(0)
     unless n.nil?
       node.right = Node.new(nil, nil , n[0], n[1])
     end
   else
-    if @nodes.length >= 2
+    if encoder.nodes.size >= 2
       node.left = Node.new(nil, nil, "", 0)
       create_tree(node.left, layer + 1, max_layer)
     end
-    if @nodes.length >= 1
+    if encoder.nodes.size >= 1
       node.right = Node.new(nil, nil, "", 0)
       create_tree(node.right, layer + 1, max_layer)
     end
@@ -60,12 +64,12 @@ def create_tree(node, layer, max_layer)
 end
 
 def encode(path, text)
-  text.chars.reduce([]){|acc, char| acc << path[char]}.join("")
+  text.chars.reduce([] of String){|acc, char| acc << path[char]}.join("")
 end
 
 def get_path(path, node, target)
   if node.symbol == target
-    @path = path
+    encoder.path = path
   else
     unless node.left.nil?
       get_path(path + "0", node.left, target)
@@ -77,9 +81,7 @@ def get_path(path, node, target)
 end
 
 def decode(path, stream)
-  decoded_array = []
-  StackProf.run(mode: :object, out: 'stackprof.dump') do
-
+  decoded_array = [] of String
   path = path.invert
   stream.chars.reduce("") do |acc, char|
     acc += char
@@ -87,17 +89,14 @@ def decode(path, stream)
       decoded_array << path[acc]
       acc = ""
     end
-    acc
   end
-  end
-
   decoded_array.join("")
 end
 
 def write_to_file(stream)
-  file_buff = []
-  (stream.length / 8.0).ceil.times do |i|
-    byte = (stream[i...i + (8 * i > stream.length ? 8 * i - stream.length : 8)].to_i(2))
+  file_buff = [] of Byte
+  (stream.size / 8.0).ceil.times do |i|
+    byte = (stream[i...i + (8 * i > stream.size ? 8 * i - stream.size : 8)].to_i(2))
     file_buff << byte
   end
 
@@ -105,7 +104,7 @@ def write_to_file(stream)
 end
 
 print "Original length (bytes): "
-original_length = text.length
+original_length = text.size
 puts original_length
 
 
@@ -117,21 +116,18 @@ print "Starting encoding... "
 encoded = encode(path, text)
 puts "Done!"
 print "Encoded length (bytes): "
-encoded_length = (encoded.length / 8.0).ceil
+encoded_length = (encoded.size / 8.0).ceil
 puts encoded_length
 
 write_to_file(encoded)
 
 print "Starting decoding... "
-  decoded = decode(path, encoded)
-  puts "Done!"
-  print "Decoded length (bytes): "
-  puts decoded.length
-  IO.write("decoded", decoded)
-puts decoded
+decoded = decode(path, encoded)
+puts "Done!"
+print "Decoded length (bytes): "
+puts decoded.size
 
-
-
+IO.write("decoded", decoded)
 
 puts "============"
 puts "Total time: " + time_diff_milli(time, Time.now).to_s + " seconds"
