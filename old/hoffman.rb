@@ -1,10 +1,12 @@
 #require pp'
-require 'stackprof'
 require "benchmark"
+require 'ruby-prof'
+require "byebug"
 
 #time = Time.now
 
-text = File.read("long_text.txt")
+#text = File.read("long_text.txt")
+text = "The path of the righteous man is beset on all sides by the iniquities of the selfish and the tyranny of evil men. Blessed is he who, in the name of charity and good will, shepherds the weak through the valley of darkness, for he is truly his brother's keeper and the finder of lost children."
 #text = "this is an example of a huffman tree"
 
 class Node
@@ -31,7 +33,13 @@ def get_table(text)
   @nodes = chars_map.sort_by {|_, v| v}
   @tree = Node.new(nil, nil, "", text.length)
   create_tree(@tree, 1, Math.log2(@nodes.length).ceil)
-  chars_map.keys.reduce({}) {|acc, sym| get_path("0", @tree.left, sym); get_path("1", @tree.right, sym); acc[sym] = @path; @path = ""; acc}
+  chars_map.keys.reduce({}) do |acc, sym|
+    get_path("0", @tree.left, sym)
+    get_path("1", @tree.right, sym)
+    acc[sym] = @path.chars.map {|v| v.to_i}
+    @path = ""
+    acc
+  end
 end
 
 def create_tree(node, layer, max_layer)
@@ -58,10 +66,17 @@ def create_tree(node, layer, max_layer)
   end
 end
 
-def encode(path, text)
-  File.open("encoded", "wb") do |file|
-    file.write(text.chars.reduce([]) {|acc, char| acc << path[char]}.join("").scan(/.{8}/).reduce([]) { |acc, byte| acc << byte.to_i(2); acc}.pack("C*"))
+def encode(table, text)
+  chunks = text.chars.reduce([]) do |acc, char|
+    acc << table[char]
   end
+
+  bytes = chunks.flatten.each_slice(8).reduce([]) do |acc, byte|
+    acc << byte.join("").to_i(2)
+    acc
+  end
+
+  File.binwrite("encode", bytes.pack("C*"))
 end
 
 def get_path(path, node, target)
@@ -78,16 +93,25 @@ def get_path(path, node, target)
 end
 
 def decode(path)
-  byte = ""
+  decoded_array = []
   path = path.invert
-  decoded_array = IO.binread("encoded").unpack("B*").join("").chars.reduce([]) do |acc, char|
-    byte += char
-    unless path[byte].nil?
-      acc << path[byte]
-      byte = ""
+
+  #result = RubyProf.profile do
+  mes = Benchmark.measure do
+    str = IO.binread("encode").unpack("B*").join("").chars
+    puts "Den"
+    str.reduce([]) do |acc, char|
+      acc << char.to_i
+      unless path[acc] == nil
+        decoded_array << path[acc]
+        acc = []
+      end
+      acc
     end
-    acc
   end
+
+  #RubyProf::GraphPrinter.new(result).print(STDOUT, {})
+  puts mes
 
   decoded_array.join("")
 end
@@ -101,6 +125,7 @@ measure = Benchmark.measure {
 
   print "Creating node tree... "
   path = get_table(text)
+  pp path
   puts "Done!"
   print "Starting encoding... "
   encoded = encode(path, text)
