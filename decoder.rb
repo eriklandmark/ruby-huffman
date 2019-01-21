@@ -1,13 +1,16 @@
 class Decoder
-  def self.decode(file, table)
+  def self.decode(file)
     decoded_array = []
-    stream = IO.binread(File.basename(file, ".*") + ".crypt").unpack("B*")[0]
+    file_stream = IO.binread(File.basename(file, ".*") + ".crypt").unpack("C*")
+    file_table = JSON.parse(file_stream.shift(file_stream.find_index(13) + 1).map(&:chr).join(""))
+    stream = file_stream.map {|b| "%08b" % b}.join("")
+    #stream = file_stream.map {|b| bb = b.to_s(2); "0"*(8-bb.length) + bb}.join("")
     index = 0
     bit_index = 0
-    table = table.invert
-    smallest_chunk = self.get_smallest_chunk(table)
+    table = file_table["table"].invert
+    smallest_chunk = table.keys.reduce(table.keys[0].length) {|acc, chunk| acc = chunk.length if chunk.length < acc; acc }
 
-    while index < stream.length
+    while index < file_table["compressed_length"]
       byte = stream[index...(index + smallest_chunk + bit_index)]
       if table[byte]
         byte_parts = (table[byte].length / 8).ceil
@@ -25,17 +28,8 @@ class Decoder
       else
         bit_index += 1
       end
-      # p "#{index} / #{stream.length - 1}"
     end
 
-    File.binwrite("enc/" + File.basename(file, ".*"), decoded_array.pack("C*"))
-  end
-
-  def self.get_smallest_chunk(table)
-    smallest_chunk = table.keys[0].length
-    table.keys.each do |chunk|
-      smallest_chunk = chunk.length if chunk.length < smallest_chunk
-    end
-    smallest_chunk
+    File.binwrite("enc/" + file_table["file_name"], decoded_array.pack("C*"))
   end
 end
